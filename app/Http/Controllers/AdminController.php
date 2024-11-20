@@ -49,14 +49,7 @@ class AdminController extends Controller
     public function AllUsers()
     {
         $users = User::where('role', 'customer')
-            ->with(['purchases' => function ($query) {
-                $query->where('is_active', true);
-            }])
-            ->get();
-
-        $users->map(function ($user) {
-            $user->status = $user->purchases->isNotEmpty() ? 'Premium' : 'Free';
-        });
+            ->get();;
         // dd($users);
         return view('admin.all-users', compact('users'));
     }
