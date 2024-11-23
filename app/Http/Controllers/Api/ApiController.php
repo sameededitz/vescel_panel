@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Cart;
+use App\Models\CartItem;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -47,6 +49,127 @@ class ApiController extends Controller
         return response()->json([
             'status' => true,
             'products' => $products,
+        ], 200);
+    }
+
+    public function cart()
+    {
+        $user = Auth::user();
+
+        $cart = Cart::with('items.product')->where('user_id', $user->id)->first();
+
+        if (!$cart) {
+            return response()->json([
+                'status' => true,
+                'cart' => [],
+            ], 200);
+        }
+
+        return response()->json([
+            'status' => true,
+            'cart' => $cart,
+        ], 200);
+    }
+
+    public function addToCart(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'product_id' => 'required|exists:products,id',
+            'quantity' => 'required|integer|min:1',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => false,
+                'message' => $validator->errors()->all()
+            ], 400);
+        }
+
+        /** @var \App\Models\User $user **/
+        $user = Auth::user();
+
+        $product = Product::findOrFail($request->product_id);
+        if ($product->units < $request->quantity) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Insufficient stock for this product.',
+            ], 400);
+        }
+
+        $cart = Cart::firstOrCreate(['user_id' => $user->id]);
+
+        $cartItem = CartItem::where('cart_id', $cart->id)
+            ->where('product_id', $product->id)
+            ->first();
+
+        if ($cartItem) {
+            $cartItem->quantity += $request->quantity;
+            if ($cartItem->quantity > $product->units) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Insufficient stock for this product.',
+                ], 400);
+            }
+
+            $cartItem->save();
+        } else {
+            $cartItem = $cart->items()->create([
+                'product_id' => $product->id,
+                'quantity' => $request->quantity,
+            ]);
+        }
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Product added to cart successfully.',
+            'cart_item' => $cartItem,
+        ], 201);
+    }
+
+    public function removeFromCart(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'product_id' => 'required|exists:products,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => false,
+                'message' => $validator->errors()->all(),
+            ], 400);
+        }
+
+        /** @var \App\Models\User $user **/
+        $user = Auth::user();
+
+        // Find the user's cart
+        $cart = $user->cart()->first();
+
+        if (!$cart) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Cart not found.',
+            ], 404);
+        }
+
+        // Find the cart item
+        $cartItem = CartItem::where('cart_id', $cart->id)
+            ->where('product_id', $request->product_id)
+            ->first();
+
+        if (!$cartItem) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Product not found in cart.',
+            ], 404);
+        }
+
+        // Delete the cart item
+        $cartItem->delete();
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Product removed from cart successfully.',
         ], 200);
     }
 
